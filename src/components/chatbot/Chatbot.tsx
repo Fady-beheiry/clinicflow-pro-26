@@ -81,7 +81,6 @@ export function Chatbot() {
     if (open && messages.length === 0) {
       setMessages([{ from: "bot", text: L.greet, choices: L.choices }]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -89,7 +88,6 @@ export function Chatbot() {
     setStage("idle");
     setLead({});
     if (open) setMessages([{ from: "bot", text: t[lang].greet, choices: t[lang].choices }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang]);
 
   useEffect(() => {
@@ -114,43 +112,42 @@ export function Chatbot() {
 
   const saveLead = async (name: string, phone: string) => {
     const { error } = await supabase.from("chatbot_leads").insert({ name, phone, language: lang, message: "From chatbot booking flow" });
-    if (error) {
-      toast.error(L.error);
-      return false;
-    }
+    if (error) { toast.error(L.error); return false; }
     toast.success(L.saved);
     return true;
   };
 
-  const askOpenAI = async (text: string) => {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are Nova Assistant, a friendly and helpful chatbot for Nova Dental clinic in Cairo, Egypt.
-Keep answers short and conversational (max 2-3 sentences).
+  const askGemini = async (text: string) => {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are Nova Assistant, a friendly chatbot for Nova Dental clinic in Cairo, Egypt.
+Keep answers short (max 2-3 sentences).
 Clinic info:
-- Working hours: Saturday to Thursday, 10:00 AM – 9:00 PM. Closed Fridays.
+- Hours: Saturday–Thursday 10AM–9PM, closed Fridays
 - Location: 12 Garden City, Cairo. Private parking available.
-- Services & pricing: Cleanings from 600 EGP, Whitening from 2,500 EGP, Implants from 12,000 EGP.
-- Booking: direct patients to click "Book an appointment".
-Always respond in ${lang === "ar" ? "Arabic" : "English"}.`,
-          },
-          { role: "user", content: text },
-        ],
-        max_tokens: 200,
-      }),
-    });
+- Services: Cleanings from 600 EGP, Whitening from 2,500 EGP, Implants from 12,000 EGP
+- For booking, tell them to click "Book an appointment"
+Respond in ${lang === "ar" ? "Arabic" : "English"}.
+
+User message: ${text}`,
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
     const data = await response.json();
-    return data.choices?.[0]?.message?.content ?? L.fallback;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? L.fallback;
   };
 
   const handleSend = async () => {
@@ -186,10 +183,10 @@ Always respond in ${lang === "ar" ? "Arabic" : "English"}.`,
       return;
     }
 
-    // OpenAI free text
+    // Gemini free text
     push({ from: "bot", text: L.thinking });
     try {
-      const reply = await askOpenAI(text);
+      const reply = await askGemini(text);
       setMessages((p) => {
         const updated = [...p];
         updated[updated.length - 1] = { from: "bot", text: reply, choices: L.choices };
