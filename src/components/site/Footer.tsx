@@ -1,4 +1,5 @@
 import { Sparkles, MapPin, Phone, Mail } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function Footer() {
   return (
@@ -32,7 +33,8 @@ export function Footer() {
         </div>
       </div>
       <div className="border-t border-border/60 py-5 text-center text-xs text-muted-foreground">
-        © {new Date().getFullYear()} Nova Dental Clinic · All rights reserved
+        © {new Date().getFullYear()} Nova Dental Clinic · All rights reserved · {" "}
+        <Link to="/auth" className="hover:text-foreground">Staff login</Link>
       </div>
     </footer>
   );
