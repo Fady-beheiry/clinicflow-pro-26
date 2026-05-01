@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { CalendarIcon, ArrowLeft, CheckCircle2, ArrowRight } from "lucide-react";
@@ -33,6 +33,8 @@ const Booking = () => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [form, setForm] = useState<{
     service: string; date: Date | undefined; time: string;
     patient_name: string; phone: string; notes: string;
@@ -40,16 +42,51 @@ const Booking = () => {
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((p) => ({ ...p, [k]: v }));
 
+  // Fetch booked slots whenever the date changes
+  useEffect(() => {
+    if (!form.date) return;
+    const fetchBookedSlots = async () => {
+      setLoadingSlots(true);
+      const dateStr = format(form.date!, "yyyy-MM-dd");
+      const { data } = await supabase
+        .from("appointments")
+        .select("appointment_time")
+        .eq("appointment_date", dateStr)
+        .not("status", "eq", "cancelled");
+      setBookedSlots(data?.map((r) => r.appointment_time) ?? []);
+      setLoadingSlots(false);
+    };
+    fetchBookedSlots();
+  }, [form.date]);
+
   const submit = async () => {
     const parsed = schema.safeParse(form);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
     }
+
+    // Double-check slot is still available before submitting
+    const dateStr = format(parsed.data.date, "yyyy-MM-dd");
+    const { data: existing } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("appointment_date", dateStr)
+      .eq("appointment_time", parsed.data.time)
+      .not("status", "eq", "cancelled");
+
+    if (existing && existing.length > 0) {
+      toast.error("This slot was just taken! Please pick another time.");
+      setBookedSlots((p) => [...p, parsed.data.time]);
+      update("time", "");
+      setStep(2);
+      return;
+    }
+
     setSubmitting(true);
     const { error } = await supabase.from("appointments").insert({
       service: parsed.data.service,
-      appointment_date: format(parsed.data.date, "yyyy-MM-dd"),
+      appointment_date: dateStr,
       appointment_time: parsed.data.time,
       patient_name: parsed.data.patient_name,
       phone: parsed.data.phone,
@@ -165,7 +202,7 @@ const Booking = () => {
                         <Calendar
                           mode="single"
                           selected={form.date}
-                          onSelect={(d) => update("date", d)}
+                          onSelect={(d) => { update("date", d); update("time", ""); }}
                           disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0)) || d.getDay() === 5}
                           initialFocus
                           className={cn("p-3 pointer-events-auto")}
@@ -176,22 +213,45 @@ const Booking = () => {
                   </div>
 
                   <div>
-                    <Label className="mb-2 block">Time slot</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {SLOTS.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => update("time", s)}
-                          className={cn(
-                            "rounded-lg border px-2 py-2 text-sm transition-colors",
-                            form.time === s
-                              ? "border-primary bg-gradient-primary text-primary-foreground"
-                              : "border-border bg-card hover:border-primary/40 hover:bg-primary-soft"
-                          )}
-                        >{s}</button>
-                      ))}
-                    </div>
+                    <Label className="mb-2 block">
+                      Time slot
+                      {loadingSlots && <span className="ml-2 text-xs text-muted-foreground">Loading...</span>}
+                    </Label>
+                    {!form.date ? (
+                      <p className="text-sm text-muted-foreground">Pick a date first to see available slots.</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-3 gap-2">
+                          {SLOTS.map((s) => {
+                            const isBooked = bookedSlots.includes(s);
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                disabled={isBooked}
+                                onClick={() => !isBooked && update("time", s)}
+                                className={cn(
+                                  "rounded-lg border px-2 py-2 text-sm transition-colors",
+                                  isBooked
+                                    ? "border-border bg-muted text-muted-foreground cursor-not-allowed line-through opacity-50"
+                                    : form.time === s
+                                    ? "border-primary bg-gradient-primary text-primary-foreground"
+                                    : "border-border bg-card hover:border-primary/40 hover:bg-primary-soft"
+                                )}
+                              >
+                                {s}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="h-3 w-3 rounded border bg-muted opacity-50" />
+                          <span>Unavailable</span>
+                          <div className="h-3 w-3 rounded border bg-gradient-primary ml-3" />
+                          <span>Selected</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
