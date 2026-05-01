@@ -22,6 +22,7 @@ const t = {
     confirm: (n: string) => `Perfect, ${n} — we'll reach out shortly to confirm. ✅`,
     saved: "Lead saved",
     error: "Something went wrong. Please try again.",
+    thinking: "Thinking...",
     choices: [
       { label: "🕒 Working hours", next: "hours" },
       { label: "📍 Location", next: "location" },
@@ -46,6 +47,7 @@ const t = {
     confirm: (n: string) => `تمام يا ${n}، هنتواصل معاك قريب لتأكيد الحجز. ✅`,
     saved: "تم حفظ بياناتك",
     error: "حصل خطأ، حاول تاني.",
+    thinking: "لحظة...",
     choices: [
       { label: "🕒 مواعيد العمل", next: "hours" },
       { label: "📍 العنوان", next: "location" },
@@ -120,6 +122,37 @@ export function Chatbot() {
     return true;
   };
 
+  const askOpenAI = async (text: string) => {
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are Nova Assistant, a friendly and helpful chatbot for Nova Dental clinic in Cairo, Egypt.
+Keep answers short and conversational (max 2-3 sentences).
+Clinic info:
+- Working hours: Saturday to Thursday, 10:00 AM – 9:00 PM. Closed Fridays.
+- Location: 12 Garden City, Cairo. Private parking available.
+- Services & pricing: Cleanings from 600 EGP, Whitening from 2,500 EGP, Implants from 12,000 EGP.
+- Booking: direct patients to click "Book an appointment".
+Always respond in ${lang === "ar" ? "Arabic" : "English"}.`,
+          },
+          { role: "user", content: text },
+        ],
+        max_tokens: 200,
+      }),
+    });
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content ?? L.fallback;
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text) return;
@@ -153,11 +186,22 @@ export function Chatbot() {
       return;
     }
 
-    // Free text fallback
-    setTimeout(() => {
-      push({ from: "bot", text: L.fallback });
-      push({ from: "bot", text: lang === "en" ? "Or pick one:" : "أو اختر:", choices: L.choices });
-    }, 400);
+    // OpenAI free text
+    push({ from: "bot", text: L.thinking });
+    try {
+      const reply = await askOpenAI(text);
+      setMessages((p) => {
+        const updated = [...p];
+        updated[updated.length - 1] = { from: "bot", text: reply, choices: L.choices };
+        return updated;
+      });
+    } catch {
+      setMessages((p) => {
+        const updated = [...p];
+        updated[updated.length - 1] = { from: "bot", text: L.fallback, choices: L.choices };
+        return updated;
+      });
+    }
   };
 
   return (
